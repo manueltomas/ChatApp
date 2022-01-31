@@ -1,10 +1,57 @@
-import { Component } from '@angular/core';
+import { Component, ElementRef, ViewChild } from '@angular/core';
+import { MatDialog } from '@angular/material/dialog';
+import { filter, Observable, of, switchMap } from 'rxjs';
+import { CallService } from './call.service';
+import { CallinfoDialogComponent, DialogData } from './callinfo-dialog/callinfo-dialog.component';
 
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
-  styleUrls: ['./app.component.css']
+  styleUrls: ['./app.component.css'],
+  providers: [CallService]
 })
 export class AppComponent {
-  title = 'angular-peerjs';
+  public isCallStarted$: Observable<boolean>;
+  private peerId: string;
+
+  @ViewChild('localVideo') localVideo: ElementRef<HTMLVideoElement>;
+  @ViewChild('remoteVideo') remoteVideo: ElementRef<HTMLVideoElement>;
+
+  constructor(public dialog: MatDialog, private callService: CallService) {
+    this.isCallStarted$ = this.callService.isCallStarted$;
+    this.peerId = this.callService.initPeer();
+  }
+  
+  ngOnInit(): void {
+    this.callService.localStream$
+      .pipe(filter(res => !!res))
+      .subscribe(stream => this.localVideo.nativeElement.srcObject = stream)
+    this.callService.remoteStream$
+      .pipe(filter(res => !!res))
+      .subscribe(stream => this.remoteVideo.nativeElement.srcObject = stream)
+  }
+  
+  ngOnDestroy(): void {
+    this.callService.destroyPeer();
+  }
+
+  public showModal(joinCall: boolean): void {
+    let dialogData: DialogData = joinCall ? ({ peerId: undefined, joinCall: true }) : ({ peerId: this.peerId, joinCall: false });
+    const dialogRef = this.dialog.open(CallinfoDialogComponent, {
+      width: '250px',
+      data: dialogData
+    });
+
+    dialogRef.afterClosed()
+      .pipe(
+        switchMap(peerId => 
+          joinCall ? of(this.callService.establishMediaCall(peerId)) : of(this.callService.enableCallAnswer())
+        ),
+      )
+      .subscribe(_  => { });
+  }
+
+  public endCall() {
+    this.callService.closeMediaCall();
+  }
 }
